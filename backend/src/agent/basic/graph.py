@@ -45,4 +45,6 @@ builder.add_node("llm_call", llm_call)
 builder.add_edge(START, "llm_call")
 builder.add_edge("llm_call", END)
 
-graph = builder.compile()
+from langfuse.langchain import CallbackHandler
+langfuse_handler = CallbackHandler()
+graph = builder.compile().with_config({"callbacks": [langfuse_handler]})

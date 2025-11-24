@@ -20,6 +20,7 @@ dependencies = [
     "google-genai",
     "ddgs>=9.9.1",
     "langchain-openai>=1.0.3",
+    "langfuse>=3.10.1",
 ]
 
 
