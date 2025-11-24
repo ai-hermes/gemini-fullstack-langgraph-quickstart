@@ -3,12 +3,14 @@ import os
 from ddgs import DDGS
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from langgraph.types import Send
 from pydantic import SecretStr
 
+from agent.advance_search.configuration import Configuration
 from agent.advance_search.prompts import get_current_date, query_writer_instructions, reflection_instructions, \
     answer_instructions
 from agent.advance_search.state import QueryGenerationState, WebSearchState, OverallState, ReflectionState
@@ -28,16 +30,17 @@ else:
     print("Authentication failed. Please check your credentials and host.")
 
 
-llm = ChatOpenAI(
-    base_url=os.environ.get("LLM_API_URL"),
-    api_key=SecretStr(os.environ.get("LLM_API_KEY")),
-    model=os.environ.get("LLM_API_MODEL"),
-    temperature=0,
-)
+def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
+    configurable = Configuration.from_runnable_config(config)
+    state.initial_search_query_count = configurable.number_of_initial_queries
 
-
-def generate_query(state: OverallState) -> QueryGenerationState:
     # check for custom initial search query count
+    llm = ChatOpenAI(
+        base_url=os.environ.get("LLM_API_URL"),
+        api_key=SecretStr(os.environ.get("LLM_API_KEY")),
+        model=configurable.query_generator_model,
+        temperature=0,
+    )
     structured_llm = llm.with_structured_output(SearchQueryList, method="json_mode")
 
     # Format the prompt
@@ -62,7 +65,6 @@ def continue_to_web_research(state: QueryGenerationState):
     return [
         Send(
             "web_research",
-            # {"search_query": search_query, "id": int(idx)}
             WebSearchState(search_query=search_query, id=str(idx))
         )
         for idx, search_query in enumerate(state.search_query)
@@ -83,7 +85,7 @@ def web_research(state: WebSearchState) -> OverallState:
     )
 
 
-def reflection(state: OverallState) -> ReflectionState:
+def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
     """LangGraph node that identifies knowledge gaps and generates potential follow-up queries.
 
     Analyzes the current summary to identify areas for further research and generates
@@ -97,6 +99,10 @@ def reflection(state: OverallState) -> ReflectionState:
     Returns:
         Dictionary with state update, including search_query key containing the generated follow-up query
     """
+
+    configurable = Configuration.from_runnable_config(config)
+    reasoning_model = configurable.reflection_model
+
     # Increment the research loop count and get the reasoning model
     state.research_loop_count = (state.research_loop_count or 0) + 1
 
@@ -108,6 +114,17 @@ def reflection(state: OverallState) -> ReflectionState:
         summaries="\n\n---\n\n".join(state.web_research_result),
     )
     # init Reasoning Model
+    llm = ChatOpenAI(
+        model=reasoning_model,
+        temperature=1.0,
+        max_retries=2,
+        base_url=os.environ.get("LLM_API_URL"),
+        api_key=SecretStr(os.environ.get("LLM_API_KEY")),
+        # reasoning={
+        #     "effort": "medium",  # 'low', 'medium', or 'high'
+        #     "summary": "auto",  # 'detailed', 'auto', or None
+        # }
+    )
     result: Reflection = llm.with_structured_output(Reflection, method="json_mode").invoke(formatted_prompt)
 
     return ReflectionState(
@@ -119,12 +136,9 @@ def reflection(state: OverallState) -> ReflectionState:
     )
 
 
-def evaluate_research(state: ReflectionState):
-    max_research_loops = (
-        state.max_research_loops
-        if state.max_research_loops is not None
-        else 10
-    )
+def evaluate_research(state: ReflectionState, config: RunnableConfig):
+    configurable = Configuration.from_runnable_config(config)
+    max_research_loops = configurable.max_research_loops
     if state.is_sufficient or state.research_loop_count >= max_research_loops:
         return "finalize_answer"
     else:
@@ -141,7 +155,7 @@ def evaluate_research(state: ReflectionState):
         ]
 
 
-def finalize_answer(state: OverallState):
+def finalize_answer(state: OverallState, config: RunnableConfig):
     """LangGraph node that finalizes the research summary.
 
     Prepares the final output by deduplicating and formatting sources, then
@@ -154,6 +168,8 @@ def finalize_answer(state: OverallState):
     Returns:
         Dictionary with state update, including running_summary key containing the formatted final summary with sources
     """
+    configurable = Configuration.from_runnable_config(config)
+    answer_model = configurable.answer_model
 
     # Format the prompt
     current_date = get_current_date()
@@ -163,7 +179,14 @@ def finalize_answer(state: OverallState):
         summaries="\n---\n\n".join(state.web_research_result),
     )
 
-    # init Reasoning Model, default to Gemini 2.5 Flash
+    # init Answer Model,
+    llm = ChatOpenAI(
+        model=answer_model,
+        temperature=0,
+        max_retries=2,
+        base_url=os.environ.get("LLM_API_URL"),
+        api_key=SecretStr(os.environ.get("LLM_API_KEY")),
+    )
     result = llm.invoke(formatted_prompt)
 
     # Replace the short urls with the original urls and add all used urls to the sources_gathered
@@ -181,7 +204,7 @@ def finalize_answer(state: OverallState):
     }
 
 
-builder = StateGraph(OverallState)
+builder = StateGraph(OverallState, context_schema=Configuration)
 
 builder.add_node("generate_query", generate_query)
 builder.add_node("web_research", web_research)
@@ -207,4 +230,6 @@ builder.add_edge("finalize_answer", END)
 from langfuse.langchain import CallbackHandler
 langfuse_handler = CallbackHandler()
 
-graph = builder.compile().with_config({"callbacks": [langfuse_handler]})
+graph = builder.compile().with_config(RunnableConfig(
+    callbacks=[langfuse_handler]
+))

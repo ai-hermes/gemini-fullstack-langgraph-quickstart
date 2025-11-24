@@ -8,7 +8,7 @@ def get_research_topic(messages: List[AnyMessage]) -> str:
     """
     # check if request has a history and combine the messages into a single string
     if len(messages) == 1:
-        research_topic = messages[-1].content
+        research_topic = messages[0].content
     else:
         research_topic = ""
         for message in messages:

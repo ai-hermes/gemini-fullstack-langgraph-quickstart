@@ -27,7 +27,6 @@ class ReflectionState(BaseModel):
     follow_up_queries: list[str]
     research_loop_count: int
     number_of_ran_queries: int
-    max_research_loops: Annotated[int, keep_it] = 10
 
 
 class QueryGenerationState(BaseModel):
