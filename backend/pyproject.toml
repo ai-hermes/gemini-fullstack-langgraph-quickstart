@@ -18,6 +18,8 @@ dependencies = [
     "langgraph-api",
     "fastapi",
     "google-genai",
+    "ddgs>=9.9.1",
+    "langchain-openai>=1.0.3",
 ]
 
 

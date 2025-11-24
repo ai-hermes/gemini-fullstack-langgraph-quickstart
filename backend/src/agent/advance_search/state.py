@@ -2,21 +2,23 @@ from __future__ import annotations
 
 import operator
 from dataclasses import dataclass, field
-from typing import Optional
 
 from langchain_core.messages import AnyMessage
-from pydantic import BaseModel, Field
-from typing_extensions import TypedDict, Annotated
+from pydantic import BaseModel
+from typing_extensions import Annotated
 
+
+def keep_it(left, right):
+    return right
 
 class OverallState(BaseModel):
     messages: Annotated[list[AnyMessage], operator.add] = []
     search_query: Annotated[list, operator.add]
     web_research_result: Annotated[list, operator.add]
     sources_gathered: Annotated[list, operator.add]
-    initial_search_query_count: Optional[int | None] = None
-    max_research_loops:  Optional[int | None] = None
-    research_loop_count: Optional[int | None] = None
+    initial_search_query_count: Annotated[int, keep_it] = 3
+    max_research_loops:  Annotated[int, keep_it] = 10
+    research_loop_count: Annotated[int, keep_it] = 0
 
 
 class ReflectionState(BaseModel):
@@ -25,7 +27,7 @@ class ReflectionState(BaseModel):
     follow_up_queries: list[str]
     research_loop_count: int
     number_of_ran_queries: int
-    max_research_loops: Optional[int | None] = None
+    max_research_loops: Annotated[int, keep_it] = 10
 
 
 class QueryGenerationState(BaseModel):
