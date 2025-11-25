@@ -13,7 +13,7 @@ from pydantic import SecretStr
 from agent.advance_search.configuration import Configuration
 from agent.advance_search.prompts import get_current_date, query_writer_instructions, reflection_instructions, \
     answer_instructions
-from agent.advance_search.state import QueryGenerationState, WebSearchState, OverallState, ReflectionState
+from agent.advance_search.state import QueryGenerationState, WebSearchState, OverallState, ReflectionState, Source
 from agent.advance_search.tools_and_schemas import SearchQueryList, Reflection
 from agent.advance_search.utils import get_research_topic
 
@@ -79,7 +79,7 @@ def web_research(state: WebSearchState) -> OverallState:
     """
 
     return OverallState(
-        sources_gathered=[],
+        sources_gathered=[Source(**item) for item in results],
         search_query=[state.search_query],
         web_research_result=[item.get('body') for item in results],
     )
@@ -192,9 +192,9 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     # Replace the short urls with the original urls and add all used urls to the sources_gathered
     unique_sources = []
     for source in state.sources_gathered:
-        if source.short_url in result.content:
+        if source.href in result.content:
             result.content = result.content.replace(
-                source.short_url, source.value
+                source.href, source.body
             )
             unique_sources.append(source)
 

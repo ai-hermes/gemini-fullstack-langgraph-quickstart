@@ -11,11 +11,17 @@ from typing_extensions import Annotated
 def keep_it(left, right):
     return max(left, right)
 
+
+class Source(BaseModel):
+    title: str
+    href: str
+    body: str
+
 class OverallState(BaseModel):
     messages: Annotated[list[AnyMessage], operator.add] = []
     search_query: Annotated[list, operator.add]
     web_research_result: Annotated[list, operator.add]
-    sources_gathered: Annotated[list, operator.add]
+    sources_gathered: Annotated[list[Source], operator.add]
     initial_search_query_count: Annotated[int, keep_it] = 3
     max_research_loops:  Annotated[int, keep_it] = 10
     research_loop_count: Annotated[int, keep_it] = 0
